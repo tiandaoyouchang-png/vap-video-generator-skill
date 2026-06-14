@@ -67,13 +67,13 @@ def generate_video(input_dir, output_file, fps, bitrate, platform):
             # For Tencent VAP: use specified layout
             cmd = f"ffmpeg -framerate {fps} -i '{os.path.join(input_dir, '%03d.png')}' "
             cmd += "-filter_complex '[0:v]split=2[rgb][alpha];[alpha]alphaextract[alpha_only];[rgb]scale=1668:1112[rgb_scaled];[alpha_only]scale=834:556[alpha_scaled];color=black:1680x1680[bg];[bg][rgb_scaled]overlay=0:0[bg_with_rgb];[bg_with_rgb][alpha_scaled]overlay=0:1116[out]' "
-            cmd += "-map '[out]' -c:v libx264 -preset ultrafast -crf 35 -b:v 80k -frames:v 46 -y "
+            cmd += f"-map '[out]' -c:v libx264 -preset ultrafast -crf 35 -b:v {bitrate}k -frames:v {len(png_files)} -y "
             cmd += f"'{output_file}'"
         else:
             # For ByteDance Alpha Player: use 1:1 left-right layout with correct dimensions
             cmd = f"ffmpeg -framerate {fps} -i '{os.path.join(input_dir, '%03d.png')}' "
             cmd += f"-filter_complex '[0:v]split=2[rgb][alpha];[alpha]alphaextract[alpha_only];[rgb]scale={width}:{height}[rgb_scaled];[alpha_only]scale={width}:{height}[alpha_scaled];[rgb_scaled][alpha_scaled]hstack=inputs=2[out]' "
-            cmd += "-map '[out]' -c:v libx264 -preset ultrafast -crf 35 -b:v 80k -frames:v 46 -y "
+            cmd += f"-map '[out]' -c:v libx264 -preset ultrafast -crf 35 -b:v {bitrate}k -frames:v {len(png_files)} -y "
             cmd += f"'{output_file}'"
         
         print(f"Running FFmpeg command...")
@@ -85,6 +85,11 @@ def generate_video(input_dir, output_file, fps, bitrate, platform):
             print(f"Error running FFmpeg: {result.stderr}")
             sys.exit(1)
         print("FFmpeg command completed successfully")
+        return {
+            "frame_count": len(png_files),
+            "width": width,
+            "height": height,
+        }
     except Exception as e:
         print(f"Exception running FFmpeg: {e}")
         sys.exit(1)
@@ -120,7 +125,7 @@ def main():
         os.makedirs(output_dir)
     
     # Generate video directly in the target directory
-    generate_video(args.input, args.output, args.fps, args.bitrate, args.platform)
+    video_info = generate_video(args.input, args.output, args.fps, args.bitrate, args.platform)
     
     # Generate metadata based on platform
     if args.platform == 'tencent-vap':
@@ -135,7 +140,7 @@ def main():
         vapc_data = {
             "info": {
                 "v": 2,
-                "f": 45,  # Number of frames (estimated)
+                "f": video_info["frame_count"],  # Number of input frames
                 "w": 1668,  # Input frame width
                 "h": 1112,  # Input frame height
                 "fps": args.fps,

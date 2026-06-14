@@ -1,68 +1,122 @@
-# VAP 视频生成器 / VAP Video Generator
+# VAP Video Generator / VAP 视频生成器
 
-一个用于将 PNG 序列转换为腾讯 VAP 和字节跳动 Alpha Player 视频的工具。
+A small CLI tool for turning PNG image sequences into transparent video assets for Tencent VAP and ByteDance Alpha Player workflows.
 
-A tool to generate Tencent VAP and ByteDance Alpha Player videos from PNG sequences.
+一个将 PNG 序列转换为腾讯 VAP 和字节跳动 Alpha Player 透明视频素材的命令行工具。
 
-## 功能 / Features
+## Why This Project Exists / 项目价值
 
-- 生成腾讯 VAP 视频，包含 MD5 和 JSON 元数据
-- 生成字节跳动 Alpha Player 视频，使用左右 1:1 布局
-- 自动检测输入帧分辨率
-- 优化文件大小，确保视频在 1M 以内
+Mobile apps, live rooms, campaign pages, and marketing tools often need alpha-channel animation assets that can be shipped as compact MP4 files. This project automates the repetitive conversion from exported PNG frames into player-ready video files, metadata, and checksums.
 
-- Generate Tencent VAP videos with MD5 and JSON metadata
-- Generate ByteDance Alpha Player videos with 1:1 left-right layout
-- Automatic resolution detection
-- Optimized for small file size
+移动端应用、直播间、活动页和营销工具经常需要以 MP4 形式交付的透明动效素材。本项目把设计导出的 PNG 帧序列自动转换为播放器可用的视频、元数据和校验文件，减少手工处理和重复配置。
 
-## 依赖 / Requirements
+## Features / 功能
+
+- Generate Tencent VAP-compatible video output with MD5 and `vapc.json` metadata.
+- Generate ByteDance Alpha Player-compatible video output using a left-right RGB/alpha layout.
+- Detect input frame resolution automatically.
+- Configure FPS, platform target, output path, and video bitrate from the CLI.
+- Use FFmpeg and ffprobe directly, so the tool can run in local scripts or asset pipelines.
+
+- 生成腾讯 VAP 兼容视频，并输出 MD5 与 `vapc.json` 元数据。
+- 生成字节跳动 Alpha Player 兼容视频，使用左右 RGB/Alpha 布局。
+- 自动检测输入 PNG 帧分辨率。
+- 通过命令行配置帧率、目标平台、输出路径和视频码率。
+- 直接调用 FFmpeg / ffprobe，便于集成到本地脚本或素材流水线。
+
+## Requirements / 依赖
 
 - Python 3
 - FFmpeg
 - ffprobe
 
-## 使用方法 / Usage
-
-### 生成腾讯 VAP 视频
+Check your local environment:
 
 ```bash
-python3 vap_master.py --input <输入目录> --output <输出文件> --fps 25 --platform tencent-vap --bitrate 100
+python3 --version
+ffmpeg -version
+ffprobe -version
 ```
 
-### 生成字节跳动 Alpha Player 视频
+## Installation / 安装
+
+Clone the repository and run the script directly:
 
 ```bash
-python3 vap_master.py --input <输入目录> --output <输出文件> --fps 25 --platform bytedance-alpha --bitrate 100
+git clone https://github.com/tiandaoyouchang-png/vap-video-generator-skill.git
+cd vap-video-generator-skill
+python3 vap_master.py --help
 ```
 
-## 参数说明 / Parameters
+## Usage / 使用方法
 
-- `--input`：包含 PNG 序列的目录路径 / Path to directory containing PNG sequence
-- `--output`：最终 MP4 文件的保存路径 / Path where final MP4 will be saved
-- `--fps`：帧率（默认：25） / Frames per second (default: 25)
-- `--platform`：平台（tencent-vap 或 bytedance-alpha，默认：tencent-vap） / Platform (tencent-vap or bytedance-alpha, default: tencent-vap)
-- `--bitrate`：编码码率（kbps，默认：100） / Encoding bitrate in kbps (default: 100)
-
-## 输出文件 / Output
-
-### 腾讯 VAP
-
-- `video.mp4`：VAP 视频文件
-- `md5.txt`：视频的 MD5 哈希值
-- `vapc.json`：VAP 配置文件
-
-### 字节跳动 Alpha Player
-
-- `video.mp4`：Alpha Player 视频文件
-- `md5.txt`：视频的 MD5 哈希值
-
-## 示例 / Example
+### Tencent VAP / 腾讯 VAP
 
 ```bash
-# 生成腾讯 VAP 视频
-python3 vap_master.py --input "./frames" --output "./output/tencent_vap/video.mp4" --fps 25 --platform tencent-vap --bitrate 100
-
-# 生成字节跳动 Alpha Player 视频
-python3 vap_master.py --input "./frames" --output "./output/bytedance_alpha/video.mp4" --fps 25 --platform bytedance-alpha --bitrate 100
+python3 vap_master.py \
+  --input ./frames \
+  --output ./output/tencent_vap/video.mp4 \
+  --fps 25 \
+  --platform tencent-vap \
+  --bitrate 100
 ```
+
+### ByteDance Alpha Player / 字节跳动 Alpha Player
+
+```bash
+python3 vap_master.py \
+  --input ./frames \
+  --output ./output/bytedance_alpha/video.mp4 \
+  --fps 25 \
+  --platform bytedance-alpha \
+  --bitrate 100
+```
+
+## Input Format / 输入格式
+
+The input directory should contain PNG frames named in sequence:
+
+```text
+000.png
+001.png
+002.png
+...
+```
+
+The tool warns when filenames do not match this pattern. All frames should use the same dimensions.
+
+输入目录应包含按顺序命名的 PNG 帧。文件名不符合顺序时，工具会输出警告。所有帧应保持相同尺寸。
+
+## CLI Options / 参数说明
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--input` | Directory containing PNG frames / PNG 序列目录 | Required |
+| `--output` | Output MP4 file path / 输出 MP4 路径 | Required |
+| `--fps` | Frames per second / 帧率 | `25` |
+| `--platform` | `tencent-vap` or `bytedance-alpha` / 目标平台 | `tencent-vap` |
+| `--bitrate` | Video bitrate in kbps / 视频码率，单位 kbps | `100` |
+
+## Output / 输出文件
+
+For Tencent VAP:
+
+- `video.mp4`: generated VAP video
+- `md5.txt`: MD5 checksum for the generated video
+- `vapc.json`: VAP layout metadata
+
+For ByteDance Alpha Player:
+
+- `video.mp4`: generated Alpha Player video
+- `md5.txt`: MD5 checksum for the generated video
+
+## Maintenance Roadmap / 维护方向
+
+- Add validation for alpha channels and frame dimensions.
+- Add more presets for common delivery sizes and bitrate targets.
+- Add sample input frames and expected output metadata.
+- Improve compatibility notes for Tencent VAP and ByteDance Alpha Player versions.
+
+## License / 许可证
+
+MIT License. See [LICENSE](LICENSE).
