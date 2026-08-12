@@ -1,103 +1,71 @@
 # PNG to VAP MP4
 
-Canonical transparent-video pipeline for Tencent VAP and ByteDance Alpha Player.
+Single canonical Skill for transparent-video generation and Tencent VapTool dependency management.
 
-## What changed
+This repository replaces the overlapping `vap-master`, `vap-generator`, legacy `vap-video-generator-skill`, and standalone `vap-tool` Skill entrypoints.
 
-This repository now exposes one generation workflow: `scripts/png_to_vap_mp4.py`. Older `vap-generator` / `vap-master` skill entrypoints are deprecated to avoid conflicting parameter names and fixed-layout implementations.
+## Canonical commands
 
-Key behavior:
-
-- natural numeric PNG ordering (`1.png`, `2.png`, `10.png`)
-- explicit RGBA conversion, including palette/pal8 PNG transparency
-- low-alpha cleanup and optional alpha remapping
-- hidden RGB cleanup in fully transparent pixels
-- explicit `straight` vs `premultiplied` alpha contract
-- dynamic `2W x H` side-by-side layouts
-- connected-white background removal that preserves enclosed white details
-- `yuv420p` mobile-compatible default and optional `yuv444p`
-- isolated temporary encoding + atomic publication
-- ffprobe metadata checks, full decode validation, sampled alpha/background QA
-- final-file MD5 and `qa.json`
-- Tencent official VapTool path retained for `vapc` atom generation
-
-## Install
+Install Python dependency:
 
 ```bash
 python3 -m pip install -r scripts/requirements.txt
 ```
 
-Requires FFmpeg and ffprobe. Tencent output additionally requires Java/JDK and VapTool.
+Verify Tencent VapTool dependencies:
 
-## ByteDance Alpha Player
+```bash
+python3 scripts/vaptool.py verify
+```
+
+Install official VapTool 2.0.6 on macOS/Windows when needed:
+
+```bash
+python3 scripts/vaptool.py install
+```
+
+Generate ByteDance Alpha Player video:
 
 ```bash
 python3 scripts/png_to_vap_mp4.py \
   --input ./frames \
   --output ./output/video.mp4 \
-  --target bytedance-alpha \
-  --fps 25
+  --target bytedance-alpha
 ```
 
-For a `280x280` source, the output is `560x280`: RGB is the left `280x280` half and alpha is the right `280x280` half.
-
-## Low-alpha cleanup / premultiplied RGB
-
-```bash
-python3 scripts/png_to_vap_mp4.py \
-  --input ./frames \
-  --output ./output/video.mp4 \
-  --target bytedance-alpha \
-  --alpha-threshold 16 \
-  --alpha-mode premultiplied
-```
-
-Use premultiplied mode only when the target shader/runtime expects it. Straight alpha remains the default.
-
-## White-background source
-
-```bash
-python3 scripts/png_to_vap_mp4.py \
-  --input ./source.mp4 \
-  --output ./output/video.mp4 \
-  --target bytedance-alpha \
-  --background-mode white-connected
-```
-
-This removes only near-white background connected to the frame boundary; enclosed white eyes/highlights remain part of the subject.
-
-## High-quality 4:4:4
-
-```bash
-python3 scripts/png_to_vap_mp4.py \
-  --input ./frames \
-  --output ./output/video.mp4 \
-  --target bytedance-alpha \
-  --pixel-format yuv444p \
-  --crf 18
-```
-
-H.264 High 4:4:4 is not universally hardware-decodable. Validate on the target player and real device.
-
-## Tencent VAP
+Generate Tencent VAP:
 
 ```bash
 python3 scripts/png_to_vap_mp4.py \
   --input ./frames \
   --output ./output/video.mp4 \
   --target tencent-vap \
-  --layout standard \
-  --vaptool-home /path/to/vaptool
+  --layout standard
 ```
 
-Use `--layout mask-left` only when alpha must be on the left. Tencent generation keeps the official VapTool path so `vapc.json` and the embedded `vapc` atom remain player-compatible.
+## What is unified here
 
-## Output QA
+- natural numeric PNG ordering (`1.png`, `2.png`, `10.png`)
+- explicit RGBA conversion including palette/pal8 transparency
+- low-alpha cleanup and alpha remapping
+- hidden RGB cleanup in fully transparent pixels
+- explicit straight/premultiplied alpha contract
+- connected-white background removal that preserves enclosed white details
+- dynamic layouts derived from source `W x H`
+- yuv420p mobile-compatible default and optional yuv444p
+- isolated temporary encoding plus atomic publication
+- ffprobe metadata checks and full decode validation
+- sampled alpha/background contamination QA
+- final-file MD5 and `qa.json`
+- Tencent official VapTool `vapc` atom path
+- VapTool install / verify / GUI launch inside the same Skill
 
-A successful run publishes the final MP4 only after validation and writes:
+For a `280x280` source in a side-by-side layout, the final video is `560x280`: each half is 1:1, while the combined canvas is 2:1.
 
-- `md5.txt` — MD5 of the final MP4
-- `qa.json` — dimensions/FPS/frame-count/decode/content checks
-- `vapc.json` — Tencent outputs only
+## Legacy compatibility
 
-See `SKILL.md` and `references/` for the full processing contract.
+`--platform` remains an alias for `--target`, and `--mode` remains an alias for `--layout` during migration. The root `vap_master.py` compatibility wrapper remains temporarily, but new workflows should call `scripts/png_to_vap_mp4.py` directly.
+
+The standalone `vap-master` and `opencode-skill-vap-tool` repositories are deprecated migration stubs and are no longer independent Skill entrypoints.
+
+See `SKILL.md` and `references/` for the processing, alpha, QA, layout, and toolchain contracts.
