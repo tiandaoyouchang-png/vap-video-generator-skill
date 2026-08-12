@@ -1,84 +1,120 @@
 ---
-name: vap-video-generator
-description: Generate transparent-video assets from PNG frame sequences for Tencent VAP or ByteDance Alpha Player. Use when the user needs to convert PNG/alpha frame sequences to VAP MP4, Alpha Player MP4, Tencent standard VAP layout, mask-left/alpha-left layout, generate vapc.json or MD5 sidecars, validate VAP output, or troubleshoot FFmpeg/VapTool generation.
+name: png-to-vap-mp4
+description: Convert PNG frame sequences or ordinary video into validated transparent MP4 assets for Tencent VAP or ByteDance Alpha Player. Use for PNG-to-VAP/Alpha conversion, pal8/GIF-derived transparency, dirty low-alpha edges, hidden RGB contamination, premultiplied-vs-straight alpha handling, dynamic RGB/alpha layouts, white-background removal, yuv420p/yuv444p encoding, vapc.json/MD5 generation, and output QA/troubleshooting.
 ---
 
-# VAP Video Generator
+# PNG to VAP MP4
 
-Use the bundled `scripts/vap_video.py` as the single execution entrypoint. Do not reimplement the FFmpeg/VapTool pipeline ad hoc unless the script itself must be repaired.
+Use `scripts/png_to_vap_mp4.py` as the single canonical execution entrypoint. Do not use or recreate the older `vap-master`, `vap-generator`, or legacy fixed-layout FFmpeg pipelines.
+
+Install the one Python dependency when needed:
+
+```bash
+python3 -m pip install -r scripts/requirements.txt
+```
 
 ## Route the request
 
-1. Choose `--target tencent-vap` for Tencent VAP, VAP, vapc, or Tencent transparent-animation requests.
-2. Choose `--target bytedance-alpha` for ByteDance Alpha Player / AlphaVideo requests.
-3. For Tencent VAP, use `--layout standard` unless the user explicitly asks for alpha/mask on the left, RGB on the right, or `mask-left`.
-4. Treat `--platform` as a backward-compatible alias for `--target`, and `--mode` as an alias for `--layout`.
+1. Use `--target tencent-vap` for Tencent VAP / `vapc` requests.
+2. Use `--target bytedance-alpha` for ByteDance Alpha Player / AlphaVideo requests.
+3. For Tencent, use `--layout standard` unless the user explicitly requires alpha/mask on the left and RGB on the right; then use `--layout mask-left`.
+4. Treat `--platform` as the legacy alias of `--target`, and `--mode` as the legacy alias of `--layout`.
 
-Read `references/layouts.md` when layout semantics, output sidecars, or compatibility details matter.
+Read `references/layouts.md` for layout semantics and `references/alpha-processing.md` before changing alpha cleanup or background removal behavior. Read `references/qa.md` when diagnosing a failed output.
 
-## Execute
+## Input contract
 
-Prefer an output directory dedicated to one asset because Tencent outputs include fixed sidecar names (`vapc.json`, `md5.txt`).
+- Accept either a directory of PNG frames or a source video file.
+- Discover PNGs first, sort them naturally by numeric portions, then renumber a temporary sequence from zero. Never depend on `%03d`, zero padding, or the original starting index.
+- Convert every source frame explicitly to RGBA before alpha operations. This is required for palette (`P`/`pal8`) PNGs with `tRNS` transparency.
+- Reject inconsistent frame dimensions.
+- Preserve the legacy 1344 -> 1334 crop only as compatibility behavior; disable it with `--no-auto-crop` or set an explicit `--crop-height`.
+- Reject opaque input by default. For white-background material, use `--background-mode white-connected`; use `--allow-opaque` only when a fully opaque alpha mask is intentional.
 
-Tencent standard:
+## Alpha cleanup contract
 
-```bash
-python3 scripts/vap_video.py \
-  --input /path/to/frames \
-  --output /path/to/output/video.mp4 \
-  --target tencent-vap \
-  --layout standard \
-  --fps 25
-```
+Default to:
 
-Tencent mask-left:
+- `--alpha-threshold 16`: set alpha <= 16 to zero.
+- Remap the remaining alpha interval back to 0..255. Disable only with `--no-alpha-remap`.
+- Force RGB to pure black wherever cleaned alpha is zero.
+- Use `--alpha-mode straight` by default because most VAP/Alpha shaders expect straight RGB plus a separate alpha mask.
+- Use `--alpha-mode premultiplied` only when the target runtime/shader explicitly expects premultiplied RGB, or when the user prioritizes clean direct preview and accepts that runtime contract.
 
-```bash
-python3 scripts/vap_video.py \
-  --input /path/to/frames \
-  --output /path/to/output/video.mp4 \
-  --target tencent-vap \
-  --layout mask-left \
-  --fps 25
-```
+Do not silently switch alpha conventions. Repeated multiplication of already-premultiplied RGB darkens antialiased edges.
 
-ByteDance Alpha Player:
+## Opaque white-background material
+
+Use:
 
 ```bash
-python3 scripts/vap_video.py \
-  --input /path/to/frames \
+python3 scripts/png_to_vap_mp4.py \
+  --input /path/to/source.mp4 \
   --output /path/to/output/video.mp4 \
   --target bytedance-alpha \
-  --fps 25
+  --background-mode white-connected
 ```
 
-## Dependency rules
+This removes only near-white regions connected to the image border. Preserve enclosed white details such as eyes, mouths, highlights, and internal decorations. Tune `--white-threshold`, `--white-softness`, and `--white-chroma-tolerance` only when the default matte is visibly wrong.
 
-- Require `ffmpeg` and `ffprobe` for all targets.
-- Require Java, `javac`, and a VapTool home containing `animtool.jar`, VapTool `ffmpeg`, and `mp4edit` only for Tencent VAP.
-- Resolve Java from `--java`, then `JAVA_HOME`, then `PATH`.
-- Resolve VapTool from `--vaptool-home` or `VAPTOOL_HOME`; never assume a user-specific absolute path.
-- Compile `VapBatch.java` into the temporary work directory. Never write generated `.class` files into the Skill directory.
+## Dynamic layout rules
 
-## Input handling
+Never hard-code source or canvas dimensions.
 
-- Accept PNG names with a numeric suffix, not only exactly `000.png`.
-- Sort by numeric suffix and normalize to a contiguous temporary sequence before encoding.
-- Require consistent frame width and height after optional cropping.
-- Preserve the compatibility normalization from 1344 px height to 1334 px by default. Override explicitly with `--crop-height`; use `--no-auto-crop` to disable the compatibility crop.
-- Warn if the first PNG does not expose an alpha channel; do not silently pretend an opaque sequence is transparent.
+For a source frame `W x H`:
 
-## Output and validation
+- ByteDance Alpha Player: RGB left `[0,0,W,H]`, alpha right `[W,0,W,H]`, final canvas `2W x H`.
+- Tencent `mask-left`: alpha left `[0,0,W,H]`, RGB right `[W,0,W,H]`, final canvas `2W x H`.
+- Tencent `standard`: let official VapTool define the packed layout and validate its `vapc.json` against the encoded video.
 
-- Always generate `md5.txt` from the final MP4.
-- For Tencent VAP, also emit `vapc.json` beside the final MP4.
-- For Tencent `mask-left`, regenerate both the embedded top-level `vapc` atom and the sidecar `vapc.json` after region swapping.
-- Validate final Tencent MP4 structure and playback with `ffprobe`; validate that a top-level `vapc` atom exists after `mask-left` post-processing.
-- Preserve the temporary work directory on failure and report its path for diagnosis.
+When `W == H`, each half is individually 1:1, but the combined side-by-side video is 2:1. Do not describe the final canvas as “1:1”.
 
 ## Quality defaults
 
-- Default to 25 fps unless the user specifies otherwise.
-- Use 2000 kbps for Tencent VapTool encoding and 3000 kbps for `mask-left` re-encoding.
-- Use 2000 kbps for ByteDance Alpha Player unless the user provides a delivery bitrate or file-size constraint.
-- Do not claim a guaranteed file size such as “under 1 MB” without measuring the generated output; bitrate, duration, frame size, and content complexity determine size.
+- Default to `25 fps` unless the user specifies another rate.
+- Default FFmpeg encoding to `CRF 18`, `preset=medium`, and `yuv420p` for mobile compatibility.
+- Use `--pixel-format yuv444p` only when the target player/device is known to decode H.264 High 4:4:4; validate on the real target device.
+- Use `--bitrate` only for delivery constraints that require explicit rate control. Do not use old defaults such as `100 kbps`, `CRF 35`, or `ultrafast` for production transparent animation.
+- Do not promise a file-size ceiling before measuring the generated file.
+
+## Tencent dependencies
+
+Require Java, `javac`, and VapTool only for `--target tencent-vap`.
+
+Resolve:
+
+- Java from `--java`, then `JAVA_HOME`, then `PATH`.
+- VapTool from `--vaptool-home` or `VAPTOOL_HOME`.
+- `animtool.jar`, VapTool `ffmpeg`, and `mp4edit` from the resolved VapTool directory.
+
+Compile `VapBatch.java` into the temporary work directory, never into the Skill folder.
+
+## Output contract
+
+Publish the requested MP4 only after validation passes. Encode into an isolated temporary file first, then atomically replace the destination.
+
+Always generate beside the final MP4:
+
+- `md5.txt`: hash of the final published MP4.
+- `qa.json`: structural/decode/content validation report.
+
+For Tencent VAP also generate:
+
+- `vapc.json`: metadata matching the final video.
+- A top-level `vapc` atom for the custom `mask-left` output.
+
+Do not generate a fake VAP `vapc.json` for ByteDance Alpha Player.
+
+## Mandatory validation
+
+Before publishing:
+
+1. Probe codec, width, height, pixel format, FPS, frame count, and duration.
+2. Decode the entire video with FFmpeg; any decode error fails the build.
+3. Check expected dynamic dimensions and frame count.
+4. For Tencent, cross-check `vapc.json` source size, video size, FPS, frame count, `aFrame`, and `rgbFrame` against the actual MP4.
+5. For side-by-side layouts, inspect first/middle/last decoded frames against the cleaned source alpha.
+6. Check safe transparent-background pixels for non-black RGB contamination and blue-biased dirt.
+7. Generate MD5 only after the final MP4 has been published.
+
+Preserve the work directory on failure and report its path. Do not overwrite an existing good output with a failed encode.
