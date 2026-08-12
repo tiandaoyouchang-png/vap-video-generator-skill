@@ -1,0 +1,3 @@
+interface:
+  display_name: "VAP Video Generator"
+  short_description: "Generate Tencent VAP and ByteDance Alpha Player videos from PNG sequences."
