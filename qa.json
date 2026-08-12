@@ -1,0 +1,52 @@
+{
+  "ok": true,
+  "errors": [],
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 560,
+        "height": 280,
+        "pix_fmt": "yuv444p",
+        "r_frame_rate": "25/1",
+        "avg_frame_rate": "25/1",
+        "duration": "2.840000",
+        "nb_frames": "71"
+      }
+    ],
+    "format": {
+      "duration": "2.840000"
+    }
+  },
+  "samples": [
+    {
+      "frame": 0,
+      "alpha_mae": 0.266,
+      "safe_pixels": 49992,
+      "safe_nonblack_ratio": 0.0,
+      "safe_blue_ratio": 0.0
+    },
+    {
+      "frame": 35,
+      "alpha_mae": 0.33,
+      "safe_pixels": 50179,
+      "safe_nonblack_ratio": 0.0,
+      "safe_blue_ratio": 0.0
+    },
+    {
+      "frame": 70,
+      "alpha_mae": 0.376,
+      "safe_pixels": 50772,
+      "safe_nonblack_ratio": 0.0,
+      "safe_blue_ratio": 0.0
+    }
+  ],
+  "expected": {
+    "width": 560,
+    "height": 280,
+    "fps": 25,
+    "frames": 71
+  }
+}
