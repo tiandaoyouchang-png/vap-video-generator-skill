@@ -1,3 +1,4 @@
 interface:
   display_name: "PNG to VAP MP4"
-  short_description: "Generate validated VAP/Alpha video and manage VapTool dependencies"
+  short_description: "Generate clean, validated VAP and Alpha Player MP4s"
+  default_prompt: "Use $png-to-vap-mp4 to convert my PNG sequence into a clean, validated transparent MP4 with matching RGB and alpha regions."
