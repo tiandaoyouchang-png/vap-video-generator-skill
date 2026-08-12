@@ -1,122 +1,103 @@
-# VAP Video Generator / VAP 视频生成器
+# PNG to VAP MP4
 
-A small CLI tool for turning PNG image sequences into transparent video assets for Tencent VAP and ByteDance Alpha Player workflows.
+Canonical transparent-video pipeline for Tencent VAP and ByteDance Alpha Player.
 
-一个将 PNG 序列转换为腾讯 VAP 和字节跳动 Alpha Player 透明视频素材的命令行工具。
+## What changed
 
-## Why This Project Exists / 项目价值
+This repository now exposes one generation workflow: `scripts/png_to_vap_mp4.py`. Older `vap-generator` / `vap-master` skill entrypoints are deprecated to avoid conflicting parameter names and fixed-layout implementations.
 
-Mobile apps, live rooms, campaign pages, and marketing tools often need alpha-channel animation assets that can be shipped as compact MP4 files. This project automates the repetitive conversion from exported PNG frames into player-ready video files, metadata, and checksums.
+Key behavior:
 
-移动端应用、直播间、活动页和营销工具经常需要以 MP4 形式交付的透明动效素材。本项目把设计导出的 PNG 帧序列自动转换为播放器可用的视频、元数据和校验文件，减少手工处理和重复配置。
+- natural numeric PNG ordering (`1.png`, `2.png`, `10.png`)
+- explicit RGBA conversion, including palette/pal8 PNG transparency
+- low-alpha cleanup and optional alpha remapping
+- hidden RGB cleanup in fully transparent pixels
+- explicit `straight` vs `premultiplied` alpha contract
+- dynamic `2W x H` side-by-side layouts
+- connected-white background removal that preserves enclosed white details
+- `yuv420p` mobile-compatible default and optional `yuv444p`
+- isolated temporary encoding + atomic publication
+- ffprobe metadata checks, full decode validation, sampled alpha/background QA
+- final-file MD5 and `qa.json`
+- Tencent official VapTool path retained for `vapc` atom generation
 
-## Features / 功能
-
-- Generate Tencent VAP-compatible video output with MD5 and `vapc.json` metadata.
-- Generate ByteDance Alpha Player-compatible video output using a left-right RGB/alpha layout.
-- Detect input frame resolution automatically.
-- Configure FPS, platform target, output path, and video bitrate from the CLI.
-- Use FFmpeg and ffprobe directly, so the tool can run in local scripts or asset pipelines.
-
-- 生成腾讯 VAP 兼容视频，并输出 MD5 与 `vapc.json` 元数据。
-- 生成字节跳动 Alpha Player 兼容视频，使用左右 RGB/Alpha 布局。
-- 自动检测输入 PNG 帧分辨率。
-- 通过命令行配置帧率、目标平台、输出路径和视频码率。
-- 直接调用 FFmpeg / ffprobe，便于集成到本地脚本或素材流水线。
-
-## Requirements / 依赖
-
-- Python 3
-- FFmpeg
-- ffprobe
-
-Check your local environment:
+## Install
 
 ```bash
-python3 --version
-ffmpeg -version
-ffprobe -version
+python3 -m pip install -r scripts/requirements.txt
 ```
 
-## Installation / 安装
+Requires FFmpeg and ffprobe. Tencent output additionally requires Java/JDK and VapTool.
 
-Clone the repository and run the script directly:
-
-```bash
-git clone https://github.com/tiandaoyouchang-png/vap-video-generator-skill.git
-cd vap-video-generator-skill
-python3 vap_master.py --help
-```
-
-## Usage / 使用方法
-
-### Tencent VAP / 腾讯 VAP
+## ByteDance Alpha Player
 
 ```bash
-python3 vap_master.py \
+python3 scripts/png_to_vap_mp4.py \
   --input ./frames \
-  --output ./output/tencent_vap/video.mp4 \
-  --fps 25 \
-  --platform tencent-vap \
-  --bitrate 100
+  --output ./output/video.mp4 \
+  --target bytedance-alpha \
+  --fps 25
 ```
 
-### ByteDance Alpha Player / 字节跳动 Alpha Player
+For a `280x280` source, the output is `560x280`: RGB is the left `280x280` half and alpha is the right `280x280` half.
+
+## Low-alpha cleanup / premultiplied RGB
 
 ```bash
-python3 vap_master.py \
+python3 scripts/png_to_vap_mp4.py \
   --input ./frames \
-  --output ./output/bytedance_alpha/video.mp4 \
-  --fps 25 \
-  --platform bytedance-alpha \
-  --bitrate 100
+  --output ./output/video.mp4 \
+  --target bytedance-alpha \
+  --alpha-threshold 16 \
+  --alpha-mode premultiplied
 ```
 
-## Input Format / 输入格式
+Use premultiplied mode only when the target shader/runtime expects it. Straight alpha remains the default.
 
-The input directory should contain PNG frames named in sequence:
+## White-background source
 
-```text
-000.png
-001.png
-002.png
-...
+```bash
+python3 scripts/png_to_vap_mp4.py \
+  --input ./source.mp4 \
+  --output ./output/video.mp4 \
+  --target bytedance-alpha \
+  --background-mode white-connected
 ```
 
-The tool warns when filenames do not match this pattern. All frames should use the same dimensions.
+This removes only near-white background connected to the frame boundary; enclosed white eyes/highlights remain part of the subject.
 
-输入目录应包含按顺序命名的 PNG 帧。文件名不符合顺序时，工具会输出警告。所有帧应保持相同尺寸。
+## High-quality 4:4:4
 
-## CLI Options / 参数说明
+```bash
+python3 scripts/png_to_vap_mp4.py \
+  --input ./frames \
+  --output ./output/video.mp4 \
+  --target bytedance-alpha \
+  --pixel-format yuv444p \
+  --crf 18
+```
 
-| Option | Description | Default |
-| --- | --- | --- |
-| `--input` | Directory containing PNG frames / PNG 序列目录 | Required |
-| `--output` | Output MP4 file path / 输出 MP4 路径 | Required |
-| `--fps` | Frames per second / 帧率 | `25` |
-| `--platform` | `tencent-vap` or `bytedance-alpha` / 目标平台 | `tencent-vap` |
-| `--bitrate` | Video bitrate in kbps / 视频码率，单位 kbps | `100` |
+H.264 High 4:4:4 is not universally hardware-decodable. Validate on the target player and real device.
 
-## Output / 输出文件
+## Tencent VAP
 
-For Tencent VAP:
+```bash
+python3 scripts/png_to_vap_mp4.py \
+  --input ./frames \
+  --output ./output/video.mp4 \
+  --target tencent-vap \
+  --layout standard \
+  --vaptool-home /path/to/vaptool
+```
 
-- `video.mp4`: generated VAP video
-- `md5.txt`: MD5 checksum for the generated video
-- `vapc.json`: VAP layout metadata
+Use `--layout mask-left` only when alpha must be on the left. Tencent generation keeps the official VapTool path so `vapc.json` and the embedded `vapc` atom remain player-compatible.
 
-For ByteDance Alpha Player:
+## Output QA
 
-- `video.mp4`: generated Alpha Player video
-- `md5.txt`: MD5 checksum for the generated video
+A successful run publishes the final MP4 only after validation and writes:
 
-## Maintenance Roadmap / 维护方向
+- `md5.txt` — MD5 of the final MP4
+- `qa.json` — dimensions/FPS/frame-count/decode/content checks
+- `vapc.json` — Tencent outputs only
 
-- Add validation for alpha channels and frame dimensions.
-- Add more presets for common delivery sizes and bitrate targets.
-- Add sample input frames and expected output metadata.
-- Improve compatibility notes for Tencent VAP and ByteDance Alpha Player versions.
-
-## License / 许可证
-
-MIT License. See [LICENSE](LICENSE).
+See `SKILL.md` and `references/` for the full processing contract.
