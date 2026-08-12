@@ -52,7 +52,7 @@ python3 scripts/png_to_vap_mp4.py \
 - explicit straight/premultiplied alpha contract
 - connected-white background removal that preserves enclosed white details
 - dynamic layouts derived from source `W x H`
-- yuv420p mobile-compatible default and optional yuv444p
+- yuv444p crisp default (H.264 High 4:4:4) with optional yuv420p for legacy devices
 - isolated temporary encoding plus atomic publication
 - ffprobe metadata checks and full decode validation
 - sampled alpha/background contamination QA

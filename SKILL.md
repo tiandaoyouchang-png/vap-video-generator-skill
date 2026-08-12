@@ -57,8 +57,8 @@ When `W == H`, each half is individually 1:1 but the combined video is 2:1.
 
 ## Quality defaults
 
-- Default `25 fps`, `CRF 18`, `preset=medium`, `yuv420p` for mobile compatibility.
-- Use `--pixel-format yuv444p` only when target player/device supports H.264 High 4:4:4; validate on-device.
+- Default `25 fps`, `CRF 18`, `preset=medium`, `yuv444p` (H.264 High 4:4:4). Full-chroma sampling keeps color edges crisp; in practice `yuv420p` visibly blurs colored edges on 280px-class sprites while `yuv444p` stays sharp at nearly the same file size, and Tencent VAP / ByteDance Alpha Player SDKs decode High 4:4:4.
+- Switch to `--pixel-format yuv420p` only when the target player/device is known not to support H.264 High 4:4:4 (e.g., some older mobile webview); always validate on-device.
 - Use explicit `--bitrate` only for delivery constraints. Do not use legacy `100 kbps`, `CRF 35`, or `ultrafast` production defaults.
 - Do not promise a file-size ceiling before measuring output.
 

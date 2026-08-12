@@ -191,11 +191,11 @@ def encode_side_by_side(frames_dir: Path, temp_mp4: Path, ffmpeg: str, args: arg
         args.preset,
         '-pix_fmt',
         args.pixel_format,
-        '-r',
-        str(args.fps),
-        '-frames:v',
-        str(args.frame_count),
     ]
+    if args.pixel_format == 'yuv444p':
+        cmd += ['-profile:v', 'high444']
+    cmd += ['-r', str(args.fps)]
+    cmd += ['-frames:v', str(args.frame_count)]
     if args.bitrate:
         cmd += ['-b:v', f'{args.bitrate}k']
     else:
@@ -344,7 +344,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--crf', type=int, default=18)
     p.add_argument('--bitrate', type=int)
     p.add_argument('--preset', default='medium')
-    p.add_argument('--pixel-format', choices=['yuv420p', 'yuv444p'], default='yuv420p')
+    p.add_argument('--pixel-format', choices=['yuv420p', 'yuv444p'], default='yuv444p')
     p.add_argument('--alpha-threshold', type=int, default=16)
     p.add_argument('--no-alpha-remap', action='store_true')
     p.add_argument('--alpha-mode', choices=['straight', 'premultiplied'], default='straight')
