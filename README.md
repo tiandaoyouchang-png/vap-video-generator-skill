@@ -50,9 +50,10 @@ python3 scripts/png_to_vap_mp4.py \
 - low-alpha cleanup and alpha remapping
 - hidden RGB cleanup in fully transparent pixels
 - explicit straight/premultiplied alpha contract
-- connected-white background removal that preserves enclosed white details
+- target-aware alpha defaults: clean premultiplied ByteDance RGB, straight Tencent VapTool input
+- connected-white background removal with working soft edges that preserves enclosed white details
 - dynamic layouts derived from source `W x H`
-- yuv420p mobile-compatible default and optional yuv444p
+- yuv420p mobile-compatible default and optional H.264 High 4:4:4 output
 - isolated temporary encoding plus atomic publication
 - ffprobe metadata checks and full decode validation
 - sampled alpha/background contamination QA
@@ -61,6 +62,8 @@ python3 scripts/png_to_vap_mp4.py \
 - VapTool install / verify / GUI launch inside the same Skill
 
 For a `280x280` source in a side-by-side layout, the final video is `560x280`: each half is 1:1, while the combined canvas is 2:1.
+
+Use `--pixel-format yuv444p` when edge fidelity is more important than hardware-decoder coverage. Keep `yuv420p` for broad mobile compatibility and validate either format in the target player.
 
 ## Legacy compatibility
 

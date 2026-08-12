@@ -45,17 +45,27 @@ def md5(path: Path) -> str:
     return h.hexdigest()
 
 
+def image_data(image: Image.Image) -> list[object]:
+    getter = getattr(image, 'get_flattened_data', None)
+    return list(getter() if getter else image.getdata())
+
+
 def white_connected_alpha(img: Image.Image, threshold: int, chroma_tol: int, softness: int) -> Image.Image:
     rgba = img.convert('RGBA')
     px = rgba.load()
     w, h = rgba.size
-    is_white = [[False] * w for _ in range(h)]
+    relaxed_threshold = max(0, threshold - softness)
+    relaxed_chroma = min(255, chroma_tol + softness)
+    is_white = [bytearray(w) for _ in range(h)]
     for y in range(h):
         for x in range(w):
             r, g, b, _ = px[x, y]
-            is_white[y][x] = min(r, g, b) >= threshold and (max(r, g, b) - min(r, g, b)) <= chroma_tol
+            is_white[y][x] = int(
+                min(r, g, b) >= relaxed_threshold
+                and (max(r, g, b) - min(r, g, b)) <= relaxed_chroma
+            )
     q: deque[tuple[int, int]] = deque()
-    seen = [[False] * w for _ in range(h)]
+    seen = [bytearray(w) for _ in range(h)]
     for x in range(w):
         for y in (0, h - 1):
             if is_white[y][x] and not seen[y][x]:
@@ -72,12 +82,23 @@ def white_connected_alpha(img: Image.Image, threshold: int, chroma_tol: int, sof
             if 0 <= nx < w and 0 <= ny < h and is_white[ny][nx] and not seen[ny][nx]:
                 seen[ny][nx] = True
                 q.append((nx, ny))
+    original_alpha = rgba.getchannel('A')
+    original_ap = original_alpha.load()
     alpha = Image.new('L', (w, h), 255)
     ap = alpha.load()
     for y in range(h):
         for x in range(w):
             if seen[y][x]:
-                ap[x, y] = 0
+                r, g, b, _ = px[x, y]
+                brightness_edge = max(0, threshold - min(r, g, b))
+                chroma_edge = max(0, max(r, g, b) - min(r, g, b) - chroma_tol)
+                if softness:
+                    matte = min(255, round(max(brightness_edge, chroma_edge) * 255 / softness))
+                else:
+                    matte = 0
+                ap[x, y] = min(original_ap[x, y], matte)
+            else:
+                ap[x, y] = original_ap[x, y]
     rgba.putalpha(alpha)
     return rgba
 
@@ -189,13 +210,14 @@ def encode_side_by_side(frames_dir: Path, temp_mp4: Path, ffmpeg: str, args: arg
         'libx264',
         '-preset',
         args.preset,
-        '-pix_fmt',
-        args.pixel_format,
         '-r',
         str(args.fps),
         '-frames:v',
         str(args.frame_count),
     ]
+    if args.pixel_format == 'yuv444p':
+        cmd += ['-profile:v', 'high444']
+    cmd += ['-pix_fmt', args.pixel_format]
     if args.bitrate:
         cmd += ['-b:v', f'{args.bitrate}k']
     else:
@@ -213,7 +235,7 @@ def probe(path: Path, ffprobe: str) -> dict[str, object]:
             '-select_streams',
             'v:0',
             '-show_entries',
-            'stream=codec_name,width,height,pix_fmt,r_frame_rate,avg_frame_rate,nb_frames,duration',
+            'stream=codec_name,profile,width,height,pix_fmt,r_frame_rate,avg_frame_rate,nb_frames,duration',
             '-show_entries',
             'format=duration',
             '-of',
@@ -246,6 +268,7 @@ def sample_compare(
     w: int,
     h: int,
     alpha_left: bool,
+    black_level: int,
 ) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     for idx in indices:
@@ -274,20 +297,21 @@ def sample_compare(
             rgb_crop = d.crop((w, 0, 2 * w, h)) if alpha_left else d.crop((0, 0, w, h))
             alpha_crop = d.crop((0, 0, w, h)) if alpha_left else d.crop((w, 0, 2 * w, h))
             src_a = s.getchannel('A')
-            ap = list(alpha_crop.convert('L').getdata())
-            sp = list(src_a.getdata())
+            ap = image_data(alpha_crop.convert('L'))
+            sp = image_data(src_a)
             mae = sum(abs(a - b) for a, b in zip(ap, sp)) / len(ap)
             safe = src_a.point(lambda a: 255 if a == 0 else 0).filter(ImageFilter.MinFilter(5))
-            rp = list(rgb_crop.getdata())
-            mp = list(safe.getdata())
+            rp = image_data(rgb_crop)
+            mp = image_data(safe)
             safe_px = [p for p, m in zip(rp, mp) if m]
-            nonblack = sum(1 for r, g, b in safe_px if max(r, g, b) > 24)
+            nonblack = sum(1 for r, g, b in safe_px if max(r, g, b) > black_level)
             blue = sum(1 for r, g, b in safe_px if b > r + 20 and b > g + 10 and b > 32)
             results.append(
                 {
                     'frame': idx,
                     'alpha_mae': round(mae, 3),
                     'safe_pixels': len(safe_px),
+                    'safe_max_rgb': max((max(pixel) for pixel in safe_px), default=0),
                     'safe_nonblack_ratio': round(nonblack / max(1, len(safe_px)), 6),
                     'safe_blue_ratio': round(blue / max(1, len(safe_px)), 6),
                 }
@@ -319,18 +343,33 @@ def validate_side_by_side(
         errors.append(f'frame count {nb} != {count}')
     decode_check(video, ffmpeg)
     indices = sorted(set([0, count // 2, count - 1]))
-    samples = sample_compare(video, frames_dir, ffmpeg, indices, w, h, alpha_left)
+    samples = sample_compare(video, frames_dir, ffmpeg, indices, w, h, alpha_left, args.black_level)
     for sample in samples:
         if sample['alpha_mae'] > args.max_alpha_mae:
             errors.append(f'alpha MAE too high on frame {sample["frame"]}: {sample["alpha_mae"]}')
         if sample['safe_blue_ratio'] > args.max_blue_ratio:
             errors.append(f'blue contamination on frame {sample["frame"]}: {sample["safe_blue_ratio"]}')
+        if sample['safe_nonblack_ratio'] > args.max_nonblack_ratio:
+            errors.append(f'non-black background on frame {sample["frame"]}: {sample["safe_nonblack_ratio"]}')
+    if stream.get('codec_name') != 'h264':
+        errors.append(f'codec {stream.get("codec_name")} != h264')
+    if stream.get('pix_fmt') != args.pixel_format:
+        errors.append(f'pixel format {stream.get("pix_fmt")} != {args.pixel_format}')
+    if args.pixel_format == 'yuv444p' and '4:4:4' not in str(stream.get('profile', '')):
+        errors.append(f'profile {stream.get("profile")} is not High 4:4:4')
     return {
         'ok': not errors,
         'errors': errors,
         'probe': meta,
         'samples': samples,
-        'expected': {'width': 2 * w, 'height': h, 'fps': args.fps, 'frames': count},
+        'expected': {
+            'width': 2 * w,
+            'height': h,
+            'fps': args.fps,
+            'frames': count,
+            'pixel_format': args.pixel_format,
+            'alpha_mode': args.alpha_mode,
+        },
     }
 
 
@@ -347,7 +386,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--pixel-format', choices=['yuv420p', 'yuv444p'], default='yuv420p')
     p.add_argument('--alpha-threshold', type=int, default=16)
     p.add_argument('--no-alpha-remap', action='store_true')
-    p.add_argument('--alpha-mode', choices=['straight', 'premultiplied'], default='straight')
+    p.add_argument('--alpha-mode', choices=['auto', 'straight', 'premultiplied'], default='auto')
     p.add_argument('--background-mode', choices=['alpha', 'white-connected'], default='alpha')
     p.add_argument('--white-threshold', type=int, default=245)
     p.add_argument('--white-chroma-tolerance', type=int, default=18)
@@ -360,6 +399,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--keep-work', action='store_true')
     p.add_argument('--max-alpha-mae', type=float, default=16.0)
     p.add_argument('--max-blue-ratio', type=float, default=0.002)
+    p.add_argument('--black-level', type=int, default=16)
+    p.add_argument('--max-nonblack-ratio', type=float, default=0.002)
     p.add_argument('--java')
     p.add_argument('--javac')
     p.add_argument('--vaptool-home')
@@ -373,6 +414,24 @@ def main() -> None:
     args = parse_args()
     if not (0 <= args.alpha_threshold <= 254):
         raise SystemExit('--alpha-threshold must be 0..254')
+    if args.fps <= 0:
+        raise SystemExit('--fps must be greater than zero')
+    if not (0 <= args.crf <= 51):
+        raise SystemExit('--crf must be 0..51')
+    if args.bitrate is not None and args.bitrate <= 0:
+        raise SystemExit('--bitrate must be greater than zero')
+    if not (0 <= args.white_threshold <= 255):
+        raise SystemExit('--white-threshold must be 0..255')
+    if not (0 <= args.white_chroma_tolerance <= 255):
+        raise SystemExit('--white-chroma-tolerance must be 0..255')
+    if not (0 <= args.white_softness <= 255):
+        raise SystemExit('--white-softness must be 0..255')
+    if not (0 <= args.black_level <= 255):
+        raise SystemExit('--black-level must be 0..255')
+    if args.max_alpha_mae < 0 or args.max_blue_ratio < 0 or args.max_nonblack_ratio < 0:
+        raise SystemExit('QA tolerances must be non-negative')
+    if args.alpha_mode == 'auto':
+        args.alpha_mode = 'premultiplied' if args.target == 'bytedance-alpha' else 'straight'
     src = Path(args.input).expanduser().resolve()
     out = Path(args.output).expanduser().resolve()
     ffmpeg = args.ffmpeg or shutil.which('ffmpeg')
@@ -386,6 +445,10 @@ def main() -> None:
     try:
         frames = work / 'frames'
         w, h, count = preprocess(src, frames, ffmpeg, args)
+        if args.pixel_format == 'yuv420p' and h % 2:
+            raise RuntimeError(
+                f'yuv420p requires an even frame height, got {h}; crop/pad the source or use --pixel-format yuv444p'
+            )
         args.frame_count = count
         temp = work / 'output.mp4'
         if args.target == 'tencent-vap':
@@ -409,6 +472,8 @@ def main() -> None:
                 str(args.standard_scale),
                 '--swap-bitrate',
                 str(args.swap_bitrate),
+                '--pixel-format',
+                args.pixel_format,
             ]
             for flag, value in [
                 ('--java', args.java),

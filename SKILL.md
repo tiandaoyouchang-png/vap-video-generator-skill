@@ -38,12 +38,12 @@ Default to:
 - `--alpha-threshold 16`: set alpha <= 16 to zero.
 - Remap remaining alpha back to 0..255; disable only with `--no-alpha-remap`.
 - Force RGB to pure black wherever cleaned alpha is zero.
-- Use `--alpha-mode straight` by default.
-- Use `--alpha-mode premultiplied` only when the runtime/shader expects premultiplied RGB or direct-preview cleanliness is explicitly preferred.
+- Use `--alpha-mode auto`: ByteDance side-by-side output uses `premultiplied` to suppress hidden RGB/blue haze; Tencent VapTool input uses `straight` to avoid double premultiplication.
+- Override with `--alpha-mode straight` or `--alpha-mode premultiplied` only when the runtime/shader contract is known.
 
 Do not silently switch alpha conventions; multiplying already-premultiplied RGB again darkens antialiased edges.
 
-For opaque white backgrounds, `white-connected` removes only near-white regions connected to the image border and preserves enclosed white details such as eyes, mouths, highlights, and decorations.
+For opaque white backgrounds, `white-connected` removes only near-white regions connected to the image border, feathers the transition using `--white-softness`, and preserves enclosed white details such as eyes, mouths, highlights, and decorations.
 
 ## Dynamic layout rules
 
@@ -58,7 +58,7 @@ When `W == H`, each half is individually 1:1 but the combined video is 2:1.
 ## Quality defaults
 
 - Default `25 fps`, `CRF 18`, `preset=medium`, `yuv420p` for mobile compatibility.
-- Use `--pixel-format yuv444p` only when target player/device supports H.264 High 4:4:4; validate on-device.
+- Use `--pixel-format yuv444p` for sharper color/mask edges when the target supports it. The encoder must report H.264 High 4:4:4 and QA rejects a mismatched profile.
 - Use explicit `--bitrate` only for delivery constraints. Do not use legacy `100 kbps`, `CRF 35`, or `ultrafast` production defaults.
 - Do not promise a file-size ceiling before measuring output.
 
@@ -103,7 +103,7 @@ Mandatory checks:
 2. Decode the entire video with FFmpeg.
 3. Check expected dynamic dimensions and frame count.
 4. For side-by-side layouts, compare first/middle/last decoded frames with cleaned source alpha.
-5. Inspect safe transparent pixels for non-black/blue-biased contamination.
+5. Inspect safe transparent pixels for both non-black and blue-biased contamination.
 6. For Tencent, cross-check metadata geometry against video.
 7. Generate MD5 only after final publication.
 
