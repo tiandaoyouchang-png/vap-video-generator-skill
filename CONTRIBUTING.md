@@ -13,7 +13,10 @@ Before opening a pull request, please run:
 
 ```bash
 python3 vap_master.py --help
+python3 -m unittest discover -s tests -v
+python3 /path/to/skill-creator/scripts/quick_validate.py .
 ```
 
 If your change affects generated video output, include the input frame size,
-platform mode, bitrate, and FFmpeg version used for validation.
+target/layout, alpha mode, pixel format/profile, bitrate or CRF, QA report,
+and FFmpeg version used for validation.
