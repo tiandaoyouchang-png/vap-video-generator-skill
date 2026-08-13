@@ -109,7 +109,7 @@ def normalize_frames(source_frames: list[Path], normalized_dir: Path, ffmpeg: st
             raise RuntimeError(f"Frame width mismatch: expected {target_width}, got {width} for {src.name}")
         if height < target_height:
             raise RuntimeError(f"Frame height too small: need at least {target_height}, got {height} for {src.name}")
-        dst = normalized_dir / f"{index:06d}.png"
+        dst = normalized_dir / f"{index:03d}.png"
         if height == target_height:
             try:
                 os.symlink(src, dst)
@@ -350,7 +350,7 @@ def run_vap_batch(java: str, animtool_jar: Path, classes_dir: Path, frames_dir: 
 
 def generate_bytedance_alpha(frames_dir: Path, output: Path, ffmpeg: str, ffprobe: str, fps: int, bitrate: int, frame_count: int, pixel_format: str) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    pattern = str(frames_dir / "%06d.png")
+    pattern = str(frames_dir / "%03d.png")
     filter_str = "[0:v]split=2[rgb][alpha];[alpha]alphaextract,format=gray[alpha_only];[rgb]format=rgb24[rgb_only];[rgb_only][alpha_only]hstack=inputs=2[out]"
     cmd = [ffmpeg, "-y", "-v", "error", "-framerate", str(fps), "-i", pattern, "-filter_complex", filter_str, "-map", "[out]", "-an", "-c:v", "libx264"]
     if pixel_format == "yuv444p":

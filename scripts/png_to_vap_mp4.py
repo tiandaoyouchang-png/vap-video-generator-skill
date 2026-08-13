@@ -383,7 +383,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--crf', type=int, default=18)
     p.add_argument('--bitrate', type=int)
     p.add_argument('--preset', default='medium')
-    p.add_argument('--pixel-format', choices=['yuv420p', 'yuv444p'], default='yuv420p')
+    p.add_argument('--pixel-format', choices=['yuv420p', 'yuv444p'], default='yuv444p')
     p.add_argument('--alpha-threshold', type=int, default=16)
     p.add_argument('--no-alpha-remap', action='store_true')
     p.add_argument('--alpha-mode', choices=['auto', 'straight', 'premultiplied'], default='auto')
